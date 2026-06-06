@@ -214,8 +214,7 @@ def ruta_generar_playoffs():
 def ruta_resultado_playoff(id_partido):
     """
     Carga el resultado de un partido de playoff.
-    Espera: goles_a, goles_b, definido_en, ganador (opcional).
-    Actualiza automáticamente el siguiente partido del bracket.
+    Propaga automáticamente el ganador al siguiente partido del bracket.
     """
     from models import actualizar_partido_playoff, obtener_partidos_playoff
 
@@ -225,23 +224,89 @@ def ruta_resultado_playoff(id_partido):
     definido_en = datos.get("definido_en", "regular")
     ganador     = datos.get("ganador")
 
+    # Obtener el partido actual
+    partidos = obtener_partidos_playoff()
+    partido  = next((p for p in partidos if p["id"] == id_partido), None)
+
+    if not partido:
+        return jsonify({ "error": "Partido no encontrado" }), 404
+
     # Determinar ganador automáticamente si no se indicó
     if ganador is None:
-        partidos = obtener_partidos_playoff()
-        partido  = next((p for p in partidos if p["id"] == id_partido), None)
-        if partido:
-            if goles_a > goles_b:
-                ganador = partido["equipo_a"]
-            elif goles_b > goles_a:
-                ganador = partido["equipo_b"]
+        if goles_a > goles_b:
+            ganador = partido["equipo_a"]
+        elif goles_b > goles_a:
+            ganador = partido["equipo_b"]
 
+    # Guardar resultado
     actualizar_partido_playoff(
         id=id_partido,
+        equipo_a=partido["equipo_a"],
+        equipo_b=partido["equipo_b"],
         goles_a=goles_a,
         goles_b=goles_b,
         ganador=ganador,
         definido_en=definido_en
     )
+
+    # Propagar ganador al siguiente partido
+    _propagar_ganador(id_partido, ganador, partidos)
+
+    return jsonify({ "mensaje": "Resultado de playoff cargado" }), 200
+
+
+def _propagar_ganador(id_partido, ganador, partidos):
+    """
+    Determina el siguiente partido del bracket y coloca al ganador.
+    Lógica: R32_1 y R32_2 → R16_1, R32_3 y R32_4 → R16_2, etc.
+    """
+    from models import actualizar_partido_playoff
+
+    # Extraer número del partido
+    partes  = id_partido.split("_")
+    ronda   = partes[0]
+    numero  = int(partes[1])
+
+    # Determinar siguiente ronda y partido
+    if ronda == "R32":
+        siguiente_ronda  = "R16"
+        siguiente_numero = (numero + 1) // 2
+    elif ronda == "R16":
+        siguiente_ronda  = "R8"
+        siguiente_numero = (numero + 1) // 2
+    elif ronda == "R8":
+        siguiente_ronda  = "R4"
+        siguiente_numero = (numero + 1) // 2
+    else:
+        return  # Es la final, no hay siguiente
+
+    siguiente_id = f"{siguiente_ronda}_{siguiente_numero}"
+    siguiente    = next((p for p in partidos if p["id"] == siguiente_id), None)
+
+    if not siguiente:
+        return
+
+    # Colocar ganador en equipo_a o equipo_b según si el número es impar o par
+    if numero % 2 == 1:
+        actualizar_partido_playoff(
+            id=siguiente_id,
+            equipo_a=ganador,
+            equipo_b=siguiente["equipo_b"],
+            goles_a=siguiente["goles_a"],
+            goles_b=siguiente["goles_b"],
+            ganador=siguiente["ganador"],
+            definido_en=siguiente["definido_en"]
+        )
+    else:
+        actualizar_partido_playoff(
+            id=siguiente_id,
+            equipo_a=siguiente["equipo_a"],
+            equipo_b=ganador,
+            goles_a=siguiente["goles_a"],
+            goles_b=siguiente["goles_b"],
+            ganador=siguiente["ganador"],
+            definido_en=siguiente["definido_en"]
+        )
 
     return jsonify({ "mensaje": "Resultado de playoff cargado" }), 200
 
