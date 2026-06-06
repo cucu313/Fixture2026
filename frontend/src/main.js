@@ -175,23 +175,35 @@ async function cargarPlayoffs() {
     const contenedor = document.getElementById("contenedor-playoffs");
     contenedor.innerHTML = "<p style='color: var(--color-texto-suave)'>Cargando bracket...</p>";
 
-    // Generar bracket si no existe
-    await fetch(`${API}/playoffs/generar`, { method: "POST" });
+    // Intentar generar bracket
+    const respuesta = await fetch(`${API}/playoffs/generar`, { method: "POST" });
+    const datos = await respuesta.json();
+
+    // Si la fase de grupos no está completa mostrar mensaje
+    if (respuesta.status === 400 && datos.error === "fase_incompleta") {
+        contenedor.innerHTML = `
+            <div style="text-align: center; padding: 3rem;">
+                <p style="font-size: 2rem">⏳</p>
+                <p style="font-size: 1.2rem; margin-top: 1rem">${datos.mensaje}</p>
+                <p style="color: var(--color-texto-suave); margin-top: 0.5rem">
+                    Completá todos los partidos de la fase de grupos para desbloquear los playoffs.
+                </p>
+            </div>
+        `;
+        return;
+    }
 
     const partidos = await fetchJSON(`${API}/playoffs`);
 
     if (!partidos || partidos.length === 0) {
-        contenedor.innerHTML = `
-            <p style="color: var(--color-texto-suave)">
-                El bracket se genera automáticamente cuando termina la fase de grupos.
-            </p>`;
+        contenedor.innerHTML = `<p style="color: var(--color-texto-suave)">Sin datos.</p>`;
         return;
     }
 
-    const octavos   = partidos.filter(p => p.ronda === "Octavos de final");
-    const cuartos   = partidos.filter(p => p.ronda === "Cuartos de final");
-    const semis     = partidos.filter(p => p.ronda === "Semifinales");
-    const final     = partidos.filter(p => p.ronda === "Final");
+    const octavos = partidos.filter(p => p.ronda === "Octavos de final");
+    const cuartos = partidos.filter(p => p.ronda === "Cuartos de final");
+    const semis   = partidos.filter(p => p.ronda === "Semifinales");
+    const final   = partidos.filter(p => p.ronda === "Final");
 
     contenedor.innerHTML = `
         <div class="bracket">

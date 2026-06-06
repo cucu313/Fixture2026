@@ -70,25 +70,12 @@ def ruta_cargar_resultado(id_partido):
     Carga el resultado de un partido de fase de grupos.
     Espera un JSON con: goles_local, goles_visitante.
     Opcionalmente: goleadores y asistidores.
-
-    Ejemplo de body:
-    {
-        "goles_local": 2,
-        "goles_visitante": 1,
-        "goleadores": [
-            { "jugador": "Messi", "equipo": "ARG" }
-        ],
-        "asistidores": [
-            { "jugador": "Di Maria", "equipo": "ARG" }
-        ]
-    }
     """
     datos = request.get_json()
 
     goles_local     = datos.get("goles_local")
     goles_visitante = datos.get("goles_visitante")
 
-    # Validar que los goles sean números válidos
     if goles_local is None or goles_visitante is None:
         return jsonify({ "error": "Faltan goles_local o goles_visitante" }), 400
 
@@ -98,14 +85,11 @@ def ruta_cargar_resultado(id_partido):
     if goles_local < 0 or goles_visitante < 0:
         return jsonify({ "error": "Los goles no pueden ser negativos" }), 400
 
-    # Guardar resultado
     cargar_resultado(id_partido, goles_local, goles_visitante)
 
-    # Registrar goleadores si se enviaron
     for gol in datos.get("goleadores", []):
         registrar_gol(gol["jugador"], gol["equipo"])
 
-    # Registrar asistidores si se enviaron
     for asistencia in datos.get("asistidores", []):
         registrar_asistencia(asistencia["jugador"], asistencia["equipo"])
 
@@ -154,9 +138,6 @@ def ruta_clasificados():
     """Devuelve los 32 clasificados a la fase eliminatoria."""
     return jsonify(obtener_clasificados())
 
-    # ─────────────────────────────────────────
-# RUTAS — BRACKET PLAYOFFS
-# ─────────────────────────────────────────
 
 @app.route("/api/playoffs", methods=["GET"])
 def ruta_playoffs():
@@ -168,30 +149,33 @@ def ruta_playoffs():
 @app.route("/api/playoffs/generar", methods=["POST"])
 def ruta_generar_playoffs():
     """
-    Genera los 16 partidos de octavos de final
-    con los 32 clasificados de la fase de grupos.
-    Solo se puede ejecutar una vez.
+    Genera los partidos de octavos de final solo cuando
+    todos los 72 partidos de la fase de grupos tienen resultado.
     """
     from models import insertar_partido_playoff, obtener_partidos_playoff
-    from logic.playoffs import obtener_clasificados
 
-    # Si ya hay partidos generados no hacer nada
     existentes = obtener_partidos_playoff()
     if existentes:
         return jsonify({ "mensaje": "Bracket ya generado" }), 200
+
+    todos_los_partidos = obtener_partidos()
+    sin_resultado = [p for p in todos_los_partidos if p["goles_local"] is None]
+
+    if sin_resultado:
+        return jsonify({
+            "error": "fase_incompleta",
+            "mensaje": f"Faltan {len(sin_resultado)} partidos por jugar en la fase de grupos."
+        }), 400
 
     clasificados = obtener_clasificados()
     primeros  = clasificados["primeros"]
     segundos  = clasificados["segundos"]
     mejores   = clasificados["mejores_terceros"]
+    todos     = primeros + segundos + mejores
 
-    # Los 32 clasificados en orden
-    todos = primeros + segundos + mejores
-
-    # Generar 16 partidos de octavos
     for i in range(16):
-        equipo_a = todos[i]["id"]     if i < len(todos) else None
-        equipo_b = todos[31-i]["id"]  if (31-i) < len(todos) else None
+        equipo_a = todos[i]["id"]    if i < len(todos) else None
+        equipo_b = todos[31-i]["id"] if (31-i) < len(todos) else None
         insertar_partido_playoff(
             id=f"R32_{i+1}",
             ronda="Octavos de final",
@@ -199,13 +183,12 @@ def ruta_generar_playoffs():
             equipo_b=equipo_b
         )
 
-    # Generar partidos vacíos de cuartos, semis y final
     for i in range(8):
         insertar_partido_playoff(id=f"R16_{i+1}", ronda="Cuartos de final")
     for i in range(4):
-        insertar_partido_playoff(id=f"R8_{i+1}", ronda="Semifinales")
+        insertar_partido_playoff(id=f"R8_{i+1}",  ronda="Semifinales")
     for i in range(2):
-        insertar_partido_playoff(id=f"R4_{i+1}", ronda="Final")
+        insertar_partido_playoff(id=f"R4_{i+1}",  ronda="Final")
 
     return jsonify({ "mensaje": "Bracket generado correctamente" }), 200
 
@@ -224,21 +207,18 @@ def ruta_resultado_playoff(id_partido):
     definido_en = datos.get("definido_en", "regular")
     ganador     = datos.get("ganador")
 
-    # Obtener el partido actual
     partidos = obtener_partidos_playoff()
     partido  = next((p for p in partidos if p["id"] == id_partido), None)
 
     if not partido:
         return jsonify({ "error": "Partido no encontrado" }), 404
 
-    # Determinar ganador automáticamente si no se indicó
     if ganador is None:
         if goles_a > goles_b:
             ganador = partido["equipo_a"]
         elif goles_b > goles_a:
             ganador = partido["equipo_b"]
 
-    # Guardar resultado
     actualizar_partido_playoff(
         id=id_partido,
         equipo_a=partido["equipo_a"],
@@ -249,7 +229,6 @@ def ruta_resultado_playoff(id_partido):
         definido_en=definido_en
     )
 
-    # Propagar ganador al siguiente partido
     _propagar_ganador(id_partido, ganador, partidos)
 
     return jsonify({ "mensaje": "Resultado de playoff cargado" }), 200
@@ -258,16 +237,14 @@ def ruta_resultado_playoff(id_partido):
 def _propagar_ganador(id_partido, ganador, partidos):
     """
     Determina el siguiente partido del bracket y coloca al ganador.
-    Lógica: R32_1 y R32_2 → R16_1, R32_3 y R32_4 → R16_2, etc.
+    R32_1 y R32_2 → R16_1, R32_3 y R32_4 → R16_2, etc.
     """
     from models import actualizar_partido_playoff
 
-    # Extraer número del partido
     partes  = id_partido.split("_")
     ronda   = partes[0]
     numero  = int(partes[1])
 
-    # Determinar siguiente ronda y partido
     if ronda == "R32":
         siguiente_ronda  = "R16"
         siguiente_numero = (numero + 1) // 2
@@ -278,7 +255,7 @@ def _propagar_ganador(id_partido, ganador, partidos):
         siguiente_ronda  = "R4"
         siguiente_numero = (numero + 1) // 2
     else:
-        return  # Es la final, no hay siguiente
+        return
 
     siguiente_id = f"{siguiente_ronda}_{siguiente_numero}"
     siguiente    = next((p for p in partidos if p["id"] == siguiente_id), None)
@@ -286,7 +263,6 @@ def _propagar_ganador(id_partido, ganador, partidos):
     if not siguiente:
         return
 
-    # Colocar ganador en equipo_a o equipo_b según si el número es impar o par
     if numero % 2 == 1:
         actualizar_partido_playoff(
             id=siguiente_id,
@@ -308,8 +284,6 @@ def _propagar_ganador(id_partido, ganador, partidos):
             definido_en=siguiente["definido_en"]
         )
 
-    return jsonify({ "mensaje": "Resultado de playoff cargado" }), 200
-
 
 # ─────────────────────────────────────────
 # DATOS INICIALES
@@ -321,62 +295,50 @@ def _cargar_datos_iniciales():
     Usa INSERT OR IGNORE para no duplicar datos si ya existen.
     """
     equipos = [
-        # GRUPO A
         ("MEX", "México",          "A", "🇲🇽"),
         ("KOR", "Corea del Sur",   "A", "🇰🇷"),
         ("RSA", "Sudáfrica",       "A", "🇿🇦"),
         ("CZE", "República Checa", "A", "🇨🇿"),
-        # GRUPO B
         ("CAN", "Canadá",          "B", "🇨🇦"),
         ("SUI", "Suiza",           "B", "🇨🇭"),
         ("QAT", "Qatar",           "B", "🇶🇦"),
         ("BIH", "Bosnia y Herz.",  "B", "🇧🇦"),
-        # GRUPO C
         ("BRA", "Brasil",          "C", "🇧🇷"),
         ("MAR", "Marruecos",       "C", "🇲🇦"),
         ("SCO", "Escocia",         "C", "SCO"),
         ("HAI", "Haití",           "C", "🇭🇹"),
-        # GRUPO D
         ("USA", "Estados Unidos",  "D", "🇺🇸"),
         ("AUS", "Australia",       "D", "🇦🇺"),
         ("PAR", "Paraguay",        "D", "🇵🇾"),
         ("TUR", "Turquía",         "D", "🇹🇷"),
-        # GRUPO E
         ("GER", "Alemania",        "E", "🇩🇪"),
         ("ECU", "Ecuador",         "E", "🇪🇨"),
         ("CIV", "Costa de Marfil", "E", "🇨🇮"),
         ("CUW", "Curazao",         "E", "🇨🇼"),
-        # GRUPO F
         ("NED", "Países Bajos",    "F", "🇳🇱"),
         ("JPN", "Japón",           "F", "🇯🇵"),
         ("TUN", "Túnez",           "F", "🇹🇳"),
         ("SWE", "Suecia",          "F", "🇸🇪"),
-        # GRUPO G
         ("BEL", "Bélgica",         "G", "🇧🇪"),
         ("IRN", "Irán",            "G", "🇮🇷"),
         ("EGY", "Egipto",          "G", "🇪🇬"),
         ("NZL", "Nueva Zelanda",   "G", "🇳🇿"),
-        # GRUPO H
         ("ESP", "España",          "H", "🇪🇸"),
         ("URU", "Uruguay",         "H", "🇺🇾"),
         ("KSA", "Arabia Saudita",  "H", "🇸🇦"),
         ("CPV", "Cabo Verde",      "H", "🇨🇻"),
-        # GRUPO I
         ("FRA", "Francia",         "I", "🇫🇷"),
         ("SEN", "Senegal",         "I", "🇸🇳"),
         ("NOR", "Noruega",         "I", "🇳🇴"),
         ("IRQ", "Irak",            "I", "🇮🇶"),
-        # GRUPO J
         ("ARG", "Argentina",       "J", "🇦🇷"),
         ("AUT", "Austria",         "J", "🇦🇹"),
         ("ALG", "Argelia",         "J", "🇩🇿"),
         ("JOR", "Jordania",        "J", "🇯🇴"),
-        # GRUPO K
         ("POR", "Portugal",        "K", "🇵🇹"),
         ("COL", "Colombia",        "K", "🇨🇴"),
         ("UZB", "Uzbekistán",      "K", "🇺🇿"),
         ("COD", "RD del Congo",    "K", "🇨🇩"),
-        # GRUPO L
         ("ENG", "Inglaterra",      "L", "ENG"),
         ("CRO", "Croacia",         "L", "🇭🇷"),
         ("PAN", "Panamá",          "L", "🇵🇦"),
@@ -384,84 +346,72 @@ def _cargar_datos_iniciales():
     ]
 
     partidos = [
-        # GRUPO A
         ("A1","A",1,"MEX","RSA","2026-06-11","16:00","Estadio Azteca, Ciudad de México"),
         ("A2","A",1,"KOR","CZE","2026-06-11","23:00","Estadio Akron, Guadalajara"),
         ("A3","A",2,"CZE","RSA","2026-06-18","15:00","Mercedes-Benz Stadium, Atlanta"),
         ("A4","A",2,"MEX","KOR","2026-06-19","00:00","Estadio Akron, Guadalajara"),
         ("A5","A",3,"CZE","MEX","2026-06-25","00:00","Estadio Azteca, Ciudad de México"),
         ("A6","A",3,"RSA","KOR","2026-06-25","00:00","Estadio BBVA, Monterrey"),
-        # GRUPO B
         ("B1","B",1,"CAN","BIH","2026-06-12","18:00","BMO Field, Toronto"),
         ("B2","B",1,"QAT","SUI","2026-06-13","18:00","Levi's Stadium, San Francisco"),
         ("B3","B",2,"SUI","BIH","2026-06-18","18:00","SoFi Stadium, Los Ángeles"),
         ("B4","B",2,"CAN","QAT","2026-06-18","21:00","BC Place, Vancouver"),
         ("B5","B",3,"SUI","CAN","2026-06-24","18:00","BC Place, Vancouver"),
         ("B6","B",3,"BIH","QAT","2026-06-24","18:00","Lumen Field, Seattle"),
-        # GRUPO C
         ("C1","C",1,"BRA","MAR","2026-06-13","21:00","MetLife Stadium, Nueva Jersey"),
         ("C2","C",1,"HAI","SCO","2026-06-14","00:00","Gillette Stadium, Boston"),
         ("C3","C",2,"BRA","HAI","2026-06-19","21:00","Gillette Stadium, Boston"),
         ("C4","C",2,"SCO","MAR","2026-06-20","00:00","Lincoln Financial Field, Filadelfia"),
         ("C5","C",3,"SCO","BRA","2026-06-25","21:00","Hard Rock Stadium, Miami"),
         ("C6","C",3,"MAR","HAI","2026-06-25","21:00","Mercedes-Benz Stadium, Atlanta"),
-        # GRUPO D
         ("D1","D",1,"USA","PAR","2026-06-13","00:00","SoFi Stadium, Los Ángeles"),
         ("D2","D",1,"AUS","TUR","2026-06-13","03:00","BC Place, Vancouver"),
         ("D3","D",2,"TUR","PAR","2026-06-19","03:00","Levi's Stadium, San Francisco"),
         ("D4","D",2,"USA","AUS","2026-06-19","18:00","Lumen Field, Seattle"),
         ("D5","D",3,"TUR","USA","2026-06-26","01:00","SoFi Stadium, Los Ángeles"),
         ("D6","D",3,"PAR","AUS","2026-06-26","01:00","Levi's Stadium, San Francisco"),
-        # GRUPO E
         ("E1","E",1,"GER","CUW","2026-06-14","16:00","NRG Stadium, Houston"),
         ("E2","E",1,"CIV","ECU","2026-06-14","22:00","Lincoln Financial Field, Filadelfia"),
         ("E3","E",2,"GER","CIV","2026-06-20","21:00","BMO Field, Toronto"),
         ("E4","E",2,"ECU","CUW","2026-06-20","23:00","Arrowhead Stadium, Kansas City"),
         ("E5","E",3,"ECU","GER","2026-06-26","21:00","MetLife Stadium, Nueva Jersey"),
         ("E6","E",3,"CUW","CIV","2026-06-26","21:00","Lincoln Financial Field, Filadelfia"),
-        # GRUPO F
         ("F1","F",1,"NED","JPN","2026-06-14","19:00","AT&T Stadium, Dallas"),
         ("F2","F",1,"TUN","SWE","2026-06-15","01:00","Arrowhead Stadium, Kansas City"),
         ("F3","F",2,"NED","TUN","2026-06-20","18:00","SoFi Stadium, Los Ángeles"),
         ("F4","F",2,"SWE","JPN","2026-06-21","00:00","Lumen Field, Seattle"),
         ("F5","F",3,"SWE","NED","2026-06-25","18:00","BC Place, Vancouver"),
         ("F6","F",3,"JPN","TUN","2026-06-25","18:00","AT&T Stadium, Dallas"),
-        # GRUPO G
         ("G1","G",1,"BEL","IRN","2026-06-15","16:00","AT&T Stadium, Dallas"),
         ("G2","G",1,"EGY","NZL","2026-06-15","22:00","Arrowhead Stadium, Kansas City"),
         ("G3","G",2,"BEL","EGY","2026-06-21","18:00","NRG Stadium, Houston"),
         ("G4","G",2,"NZL","IRN","2026-06-21","21:00","MetLife Stadium, Nueva Jersey"),
         ("G5","G",3,"NZL","BEL","2026-06-26","18:00","AT&T Stadium, Dallas"),
         ("G6","G",3,"IRN","EGY","2026-06-26","18:00","Arrowhead Stadium, Kansas City"),
-        # GRUPO H
         ("H1","H",1,"ESP","CPV","2026-06-15","15:00","Mercedes-Benz Stadium, Atlanta"),
         ("H2","H",1,"KSA","URU","2026-06-16","01:00","Hard Rock Stadium, Miami"),
         ("H3","H",2,"ESP","KSA","2026-06-21","15:00","Mercedes-Benz Stadium, Atlanta"),
         ("H4","H",2,"URU","CPV","2026-06-22","00:00","Gillette Stadium, Boston"),
         ("H5","H",3,"ESP","URU","2026-06-26","00:00","Estadio Akron, Guadalajara"),
         ("H6","H",3,"CPV","KSA","2026-06-26","00:00","Hard Rock Stadium, Miami"),
-        # GRUPO I
         ("I1","I",1,"FRA","SEN","2026-06-16","16:00","MetLife Stadium, Nueva Jersey"),
         ("I2","I",1,"NOR","IRQ","2026-06-16","22:00","Lincoln Financial Field, Filadelfia"),
         ("I3","I",2,"FRA","NOR","2026-06-22","18:00","Gillette Stadium, Boston"),
         ("I4","I",2,"IRQ","SEN","2026-06-22","21:00","Hard Rock Stadium, Miami"),
         ("I5","I",3,"IRQ","FRA","2026-06-27","00:00","NRG Stadium, Houston"),
         ("I6","I",3,"SEN","NOR","2026-06-27","00:00","BMO Field, Toronto"),
-        # GRUPO J
         ("J1","J",1,"ARG","ALG","2026-06-16","19:00","AT&T Stadium, Dallas"),
         ("J2","J",1,"AUT","JOR","2026-06-17","01:00","Arrowhead Stadium, Kansas City"),
         ("J3","J",2,"ARG","AUT","2026-06-22","22:00","NRG Stadium, Houston"),
         ("J4","J",2,"JOR","ALG","2026-06-23","01:00","SoFi Stadium, Los Ángeles"),
         ("J5","J",3,"JOR","ARG","2026-06-27","03:00","AT&T Stadium, Dallas"),
         ("J6","J",3,"ALG","AUT","2026-06-27","03:00","Arrowhead Stadium, Kansas City"),
-        # GRUPO K
         ("K1","K",1,"POR","COD","2026-06-17","16:00","Levi's Stadium, San Francisco"),
         ("K2","K",1,"UZB","COL","2026-06-17","22:00","Estadio Azteca, Ciudad de México"),
         ("K3","K",2,"POR","UZB","2026-06-23","16:00","Lumen Field, Seattle"),
         ("K4","K",2,"COL","COD","2026-06-23","22:00","SoFi Stadium, Los Ángeles"),
         ("K5","K",3,"COL","POR","2026-06-27","21:00","BMO Field, Toronto"),
         ("K6","K",3,"COD","UZB","2026-06-27","21:00","Levi's Stadium, San Francisco"),
-        # GRUPO L
         ("L1","L",1,"ENG","CRO","2026-06-17","19:00","MetLife Stadium, Nueva Jersey"),
         ("L2","L",1,"PAN","GHA","2026-06-18","01:00","Mercedes-Benz Stadium, Atlanta"),
         ("L3","L",2,"ENG","PAN","2026-06-23","19:00","Hard Rock Stadium, Miami"),
