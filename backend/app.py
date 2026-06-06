@@ -2,6 +2,7 @@
 # Define todas las rutas de la API REST
 
 from flask import Flask, jsonify, request
+from flask_cors import CORS
 from database import inicializar_db
 from models import (
     insertar_equipo, insertar_partido,
@@ -10,9 +11,10 @@ from models import (
 )
 from logic.posiciones import calcular_tabla
 from logic.estadisticas import registrar_gol, registrar_asistencia, get_goleadores, get_asistidores
-from logic.playoffs import obtener_clasificados, crear_partido_playoff, registrar_resultado_playoff
+from logic.playoffs import obtener_clasificados
 
 app = Flask(__name__)
+CORS(app)
 
 
 # ─────────────────────────────────────────
@@ -34,13 +36,13 @@ def setup():
 # ─────────────────────────────────────────
 
 @app.route("/api/equipos", methods=["GET"])
-def get_equipos():
+def ruta_equipos():
     """Devuelve todos los equipos del torneo."""
     return jsonify(obtener_equipos())
 
 
 @app.route("/api/equipos/<grupo>", methods=["GET"])
-def get_equipos_grupo(grupo):
+def ruta_equipos_grupo(grupo):
     """Devuelve los equipos de un grupo específico."""
     from models import obtener_equipos_por_grupo
     return jsonify(obtener_equipos_por_grupo(grupo.upper()))
@@ -51,19 +53,19 @@ def get_equipos_grupo(grupo):
 # ─────────────────────────────────────────
 
 @app.route("/api/partidos", methods=["GET"])
-def get_partidos():
+def ruta_partidos():
     """Devuelve todos los partidos ordenados por fecha."""
     return jsonify(obtener_partidos())
 
 
 @app.route("/api/partidos/<grupo>", methods=["GET"])
-def get_partidos_grupo(grupo):
+def ruta_partidos_grupo(grupo):
     """Devuelve los partidos de un grupo específico."""
     return jsonify(obtener_partidos_por_grupo(grupo.upper()))
 
 
 @app.route("/api/partidos/<id_partido>/resultado", methods=["POST"])
-def post_resultado(id_partido):
+def ruta_cargar_resultado(id_partido):
     """
     Carga el resultado de un partido de fase de grupos.
     Espera un JSON con: goles_local, goles_visitante.
@@ -110,12 +112,19 @@ def post_resultado(id_partido):
     return jsonify({ "mensaje": "Resultado cargado correctamente" }), 200
 
 
+@app.route("/api/partidos/<id_partido>/borrar-resultado", methods=["POST"])
+def ruta_borrar_resultado(id_partido):
+    """Borra el resultado de un partido para permitir editarlo."""
+    cargar_resultado(id_partido, None, None)
+    return jsonify({ "mensaje": "Resultado borrado correctamente" }), 200
+
+
 # ─────────────────────────────────────────
 # RUTAS — POSICIONES
 # ─────────────────────────────────────────
 
 @app.route("/api/posiciones/<grupo>", methods=["GET"])
-def get_posiciones(grupo):
+def ruta_posiciones(grupo):
     """Devuelve la tabla de posiciones de un grupo ordenada."""
     return jsonify(calcular_tabla(grupo.upper()))
 
@@ -125,13 +134,13 @@ def get_posiciones(grupo):
 # ─────────────────────────────────────────
 
 @app.route("/api/goleadores", methods=["GET"])
-def get_goleadores():
+def ruta_goleadores():
     """Devuelve el ranking de goleadores del torneo."""
     return jsonify(get_goleadores())
 
 
 @app.route("/api/asistidores", methods=["GET"])
-def get_asistidores():
+def ruta_asistidores():
     """Devuelve el ranking de asistidores del torneo."""
     return jsonify(get_asistidores())
 
@@ -141,7 +150,7 @@ def get_asistidores():
 # ─────────────────────────────────────────
 
 @app.route("/api/clasificados", methods=["GET"])
-def get_clasificados():
+def ruta_clasificados():
     """Devuelve los 32 clasificados a la fase eliminatoria."""
     return jsonify(obtener_clasificados())
 

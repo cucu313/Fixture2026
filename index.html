@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fixture Mundial 2026 </title>
+    <link rel="stylesheet" href="../styles/main.css">
+</head>
+<body>
+
+    <!-- ENCABEZADO -->
+    <header>
+        <h1> Mundial 2026</h1>
+        <nav>
+            <button class="btn-nav activo" onclick="mostrarSeccion('grupos')">Grupos</button>
+            <button class="btn-nav" onclick="mostrarSeccion('fixture')">Fixture</button>
+            <button class="btn-nav" onclick="mostrarSeccion('playoffs')">Playoffs</button>
+            <button class="btn-nav" onclick="mostrarSeccion('estadisticas')">Estadísticas</button>
+        </nav>
+    </header>
+
+    <!-- CONTENIDO PRINCIPAL -->
+    <main>
+
+        <!-- SECCIÓN GRUPOS -->
+        <section id="seccion-grupos" class="seccion activa">
+            <h2>Fase de Grupos</h2>
+            <div id="contenedor-grupos"></div>
+        </section>
+
+        <!-- SECCIÓN FIXTURE -->
+        <section id="seccion-fixture" class="seccion">
+            <h2>Fixture — Cargar Resultados</h2>
+            <div class="filtros">
+                <label>Filtrar por grupo:
+                    <select id="filtro-grupo" onchange="filtrarPartidos()">
+                        <option value="todos">Todos</option>
+                        <option value="A">Grupo A</option>
+                        <option value="B">Grupo B</option>
+                        <option value="C">Grupo C</option>
+                        <option value="D">Grupo D</option>
+                        <option value="E">Grupo E</option>
+                        <option value="F">Grupo F</option>
+                        <option value="G">Grupo G</option>
+                        <option value="H">Grupo H</option>
+                        <option value="I">Grupo I</option>
+                        <option value="J">Grupo J</option>
+                        <option value="K">Grupo K</option>
+                        <option value="L">Grupo L</option>
+                    </select>
+                </label>
+            </div>
+            <div id="contenedor-fixture"></div>
+        </section>
+
+        <!-- SECCIÓN PLAYOFFS -->
+        <section id="seccion-playoffs" class="seccion">
+            <h2>Fase Eliminatoria</h2>
+            <div id="contenedor-playoffs"></div>
+        </section>
+
+        <!-- SECCIÓN ESTADÍSTICAS -->
+        <section id="seccion-estadisticas" class="seccion">
+            <h2>Estadísticas del Torneo</h2>
+            <div class="estadisticas-grid">
+                <div>
+                    <h3>Goleadores</h3>
+                    <div id="contenedor-goleadores"></div>
+                </div>
+                <div>
+                    <h3>Asistidores</h3>
+                    <div id="contenedor-asistidores"></div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <script src="frontend/src/main.js" type="module"></script>
+
+</body>
+</html>
