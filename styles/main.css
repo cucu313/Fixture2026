@@ -438,3 +438,88 @@ main {
     border-color: var(--color-acento);
     color: var(--color-texto);
 }
+
+/* ─────────────────────────────────────────
+   BRACKET PLAYOFFS
+───────────────────────────────────────── */
+
+.bracket {
+    display: flex;
+    gap: 2rem;
+    overflow-x: auto;
+    padding-bottom: 1rem;
+}
+
+.bracket-ronda {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    min-width: 200px;
+}
+
+.bracket-ronda h3 {
+    color: var(--color-acento);
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 0.5rem;
+    text-align: center;
+}
+
+.playoff-card {
+    background-color: var(--color-secundario);
+    border: 1px solid var(--color-borde);
+    border-radius: var(--radio-borde);
+    padding: 0.6rem;
+    box-shadow: var(--sombra);
+}
+
+.playoff-card.jugado {
+    border-left: 3px solid var(--color-exito);
+}
+
+.playoff-equipo {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.3rem 0.5rem;
+    font-size: 0.85rem;
+    border-radius: 4px;
+}
+
+.playoff-equipo.ganador {
+    background-color: var(--color-tarjeta);
+    color: gold;
+    font-weight: bold;
+}
+
+.playoff-goles {
+    font-weight: bold;
+    color: var(--color-acento);
+    min-width: 20px;
+    text-align: right;
+}
+
+.btn-playoff {
+    width: 100%;
+    margin-top: 0.5rem;
+    background-color: var(--color-tarjeta);
+    color: var(--color-texto);
+    border: 1px solid var(--color-borde);
+    padding: 0.3rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    transition: background 0.2s;
+}
+
+.btn-playoff:hover {
+    background-color: var(--color-acento);
+}
+
+.playoff-definido {
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--color-texto-suave);
+    margin-top: 0.3rem;
+}

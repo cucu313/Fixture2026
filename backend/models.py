@@ -136,3 +136,32 @@ def obtener_asistidores():
             ORDER BY asistencias DESC
         """)
         return [dict(fila) for fila in cursor.fetchall()]
+        # ─────────────────────────────────────────
+# PLAYOFFS
+# ─────────────────────────────────────────
+
+def insertar_partido_playoff(id, ronda, equipo_a=None, equipo_b=None):
+    """Inserta un partido de playoff. Si ya existe lo ignora."""
+    with get_cursor() as cursor:
+        cursor.execute("""
+            INSERT OR IGNORE INTO playoffs (id, ronda, equipo_a, equipo_b)
+            VALUES (?, ?, ?, ?)
+        """, (id, ronda, equipo_a, equipo_b))
+
+
+def obtener_partidos_playoff():
+    """Devuelve todos los partidos de playoff."""
+    with get_cursor() as cursor:
+        cursor.execute("SELECT * FROM playoffs ORDER BY id")
+        return [dict(fila) for fila in cursor.fetchall()]
+
+
+def actualizar_partido_playoff(id, equipo_a=None, equipo_b=None, goles_a=None, goles_b=None, ganador=None, definido_en=None):
+    """Actualiza un partido de playoff existente."""
+    with get_cursor() as cursor:
+        cursor.execute("""
+            UPDATE playoffs
+            SET equipo_a = ?, equipo_b = ?, goles_a = ?, goles_b = ?,
+                ganador = ?, definido_en = ?
+            WHERE id = ?
+        """, (equipo_a, equipo_b, goles_a, goles_b, ganador, definido_en, id))

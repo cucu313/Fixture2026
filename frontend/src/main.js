@@ -168,42 +168,183 @@ async function editarResultado(idPartido) {
 }
 
 // ─────────────────────────────────────────
-// PLAYOFFS
+// PLAYOFFS — BRACKET VISUAL
 // ─────────────────────────────────────────
 
 async function cargarPlayoffs() {
-    const clasificados = await fetchJSON(`${API}/clasificados`);
     const contenedor = document.getElementById("contenedor-playoffs");
+    contenedor.innerHTML = "<p style='color: var(--color-texto-suave)'>Cargando bracket...</p>";
+
+    // Generar bracket si no existe
+    await fetch(`${API}/playoffs/generar`, { method: "POST" });
+
+    const partidos = await fetchJSON(`${API}/playoffs`);
+
+    if (!partidos || partidos.length === 0) {
+        contenedor.innerHTML = `
+            <p style="color: var(--color-texto-suave)">
+                El bracket se genera automáticamente cuando termina la fase de grupos.
+            </p>`;
+        return;
+    }
+
+    const octavos   = partidos.filter(p => p.ronda === "Octavos de final");
+    const cuartos   = partidos.filter(p => p.ronda === "Cuartos de final");
+    const semis     = partidos.filter(p => p.ronda === "Semifinales");
+    const final     = partidos.filter(p => p.ronda === "Final");
 
     contenedor.innerHTML = `
-        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 2rem;">
-            <div>
-                <h3 style="color: var(--color-acento); margin-bottom: 1rem">1° de cada grupo</h3>
-                ${clasificados.primeros.map(e => `
-                    <div style="padding: 0.5rem; border-bottom: 1px solid var(--color-borde)">
-                        ${e.id} — Grupo ${e.grupo} (${e.PTS} pts)
-                    </div>
-                `).join("")}
+        <div class="bracket">
+            <div class="bracket-ronda">
+                <h3>Octavos de final</h3>
+                ${octavos.map(p => renderPartidoPlayoff(p)).join("")}
             </div>
-            <div>
-                <h3 style="color: var(--color-acento); margin-bottom: 1rem">2° de cada grupo</h3>
-                ${clasificados.segundos.map(e => `
-                    <div style="padding: 0.5rem; border-bottom: 1px solid var(--color-borde)">
-                        ${e.id} — Grupo ${e.grupo} (${e.PTS} pts)
-                    </div>
-                `).join("")}
+            <div class="bracket-ronda">
+                <h3>Cuartos de final</h3>
+                ${cuartos.map(p => renderPartidoPlayoff(p)).join("")}
             </div>
-            <div>
-                <h3 style="color: var(--color-acento); margin-bottom: 1rem">Mejores terceros</h3>
-                ${clasificados.mejores_terceros.map(e => `
-                    <div style="padding: 0.5rem; border-bottom: 1px solid var(--color-borde)">
-                        ${e.id} — Grupo ${e.grupo} (${e.PTS} pts)
-                    </div>
-                `).join("")}
+            <div class="bracket-ronda">
+                <h3>Semifinales</h3>
+                ${semis.map(p => renderPartidoPlayoff(p)).join("")}
+            </div>
+            <div class="bracket-ronda">
+                <h3>Final</h3>
+                ${final.map(p => renderPartidoPlayoff(p)).join("")}
             </div>
         </div>
     `;
 }
+
+function renderPartidoPlayoff(partido) {
+    const jugado  = partido.goles_a !== null;
+    const equipoA = partido.equipo_a || "Por definir";
+    const equipoB = partido.equipo_b || "Por definir";
+
+    return `
+        <div class="playoff-card ${jugado ? "jugado" : ""}">
+            <div class="playoff-equipo ${partido.ganador === partido.equipo_a ? "ganador" : ""}">
+                ${equipoA}
+                <span class="playoff-goles">${jugado ? partido.goles_a : "-"}</span>
+            </div>
+            <div class="playoff-equipo ${partido.ganador === partido.equipo_b ? "ganador" : ""}">
+                ${equipoB}
+                <span class="playoff-goles">${jugado ? partido.goles_b : "-"}</span>
+            </div>
+            ${!jugado && partido.equipo_a && partido.equipo_b ? `
+                <button class="btn-playoff" onclick="cargarResultadoPlayoff('${partido.id}', '${partido.equipo_a}', '${partido.equipo_b}')">
+                    Cargar resultado
+                </button>
+            ` : ""}
+            ${jugado ? `<div class="playoff-definido">${partido.definido_en}</div>` : ""}
+        </div>
+    `;
+}
+
+function cargarResultadoPlayoff(idPartido, equipoA, equipoB) {
+    const modalExistente = document.getElementById("modal-playoff");
+    if (modalExistente) modalExistente.remove();
+
+    const modal = document.createElement("div");
+    modal.id = "modal-playoff";
+    modal.innerHTML = `
+        <div class="modal-overlay" onclick="cerrarModalPlayoff()"></div>
+        <div class="modal-contenido">
+            <h3>⚽ Resultado del partido</h3>
+            <p class="modal-marcador">${equipoA} vs ${equipoB}</p>
+
+            <div class="fila-gol">
+                <span>${equipoA}</span>
+                <input class="input-goles" type="number" min="0" id="playoff-goles-a" placeholder="0">
+            </div>
+            <div class="fila-gol">
+                <span>${equipoB}</span>
+                <input class="input-goles" type="number" min="0" id="playoff-goles-b" placeholder="0">
+            </div>
+
+            <div class="fila-gol" style="margin-top: 1rem">
+                <span>Definido en:</span>
+                <select id="playoff-definido" style="background: var(--color-primario); color: var(--color-texto); border: 1px solid var(--color-borde); padding: 0.3rem; border-radius: 4px;">
+                    <option value="regular">Tiempo regular</option>
+                    <option value="extratime">Tiempo extra</option>
+                    <option value="penales">Penales</option>
+                </select>
+            </div>
+
+            <div id="playoff-ganador-container" style="display:none; margin-top: 1rem">
+                <p style="color: var(--color-texto-suave); margin-bottom: 0.5rem">¿Quién ganó en penales?</p>
+                <div style="display: flex; gap: 1rem">
+                    <button class="btn-guardar" onclick="setGanadorPenales('${equipoA}', '${idPartido}', '${equipoA}', '${equipoB}')">${equipoA}</button>
+                    <button class="btn-guardar" onclick="setGanadorPenales('${equipoB}', '${idPartido}', '${equipoA}', '${equipoB}')">${equipoB}</button>
+                </div>
+            </div>
+
+            <div class="modal-botones">
+                <button class="btn-guardar" onclick="confirmarResultadoPlayoff('${idPartido}', '${equipoA}', '${equipoB}')">✅ Confirmar</button>
+                <button class="btn-cancelar" onclick="cerrarModalPlayoff()">Cancelar</button>
+            </div>
+        </div>
+    `;
+
+    // Mostrar selector de ganador si se elige penales
+    modal.querySelector("#playoff-definido").addEventListener("change", function() {
+        const ganadorContainer = document.getElementById("playoff-ganador-container");
+        ganadorContainer.style.display = this.value === "penales" ? "block" : "none";
+    });
+
+    document.body.appendChild(modal);
+}
+
+let ganadorPenales = null;
+
+function setGanadorPenales(equipo, idPartido, equipoA, equipoB) {
+    ganadorPenales = equipo;
+    document.querySelectorAll("#modal-playoff .btn-guardar").forEach(b => b.style.opacity = "0.6");
+    event.target.style.opacity = "1";
+    event.target.style.outline = "2px solid white";
+}
+
+async function confirmarResultadoPlayoff(idPartido, equipoA, equipoB) {
+    const golesA     = parseInt(document.getElementById("playoff-goles-a").value);
+    const golesB     = parseInt(document.getElementById("playoff-goles-b").value);
+    const definidoEn = document.getElementById("playoff-definido").value;
+
+    if (isNaN(golesA) || isNaN(golesB)) {
+        alert("Ingresá los goles de ambos equipos.");
+        return;
+    }
+
+    let ganador = ganadorPenales;
+    if (definidoEn !== "penales") {
+        ganador = golesA > golesB ? equipoA : equipoB;
+    }
+
+    if (!ganador) {
+        alert("Seleccioná el ganador en penales.");
+        return;
+    }
+
+    await fetchPost(`${API}/playoffs/${idPartido}/resultado`, {
+        goles_a:     golesA,
+        goles_b:     golesB,
+        definido_en: definidoEn,
+        ganador:     ganador
+    });
+
+    ganadorPenales = null;
+    cerrarModalPlayoff();
+    await cargarPlayoffs();
+}
+
+function cerrarModalPlayoff() {
+    const modal = document.getElementById("modal-playoff");
+    if (modal) modal.remove();
+    ganadorPenales = null;
+}
+
+window.cargarResultadoPlayoff  = cargarResultadoPlayoff;
+window.confirmarResultadoPlayoff = confirmarResultadoPlayoff;
+window.cerrarModalPlayoff      = cerrarModalPlayoff;
+window.setGanadorPenales       = setGanadorPenales;
 
 // ─────────────────────────────────────────
 // ESTADÍSTICAS

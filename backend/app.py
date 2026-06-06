@@ -154,6 +154,97 @@ def ruta_clasificados():
     """Devuelve los 32 clasificados a la fase eliminatoria."""
     return jsonify(obtener_clasificados())
 
+    # ─────────────────────────────────────────
+# RUTAS — BRACKET PLAYOFFS
+# ─────────────────────────────────────────
+
+@app.route("/api/playoffs", methods=["GET"])
+def ruta_playoffs():
+    """Devuelve todos los partidos del bracket de playoffs."""
+    from models import obtener_partidos_playoff
+    return jsonify(obtener_partidos_playoff())
+
+
+@app.route("/api/playoffs/generar", methods=["POST"])
+def ruta_generar_playoffs():
+    """
+    Genera los 16 partidos de octavos de final
+    con los 32 clasificados de la fase de grupos.
+    Solo se puede ejecutar una vez.
+    """
+    from models import insertar_partido_playoff, obtener_partidos_playoff
+    from logic.playoffs import obtener_clasificados
+
+    # Si ya hay partidos generados no hacer nada
+    existentes = obtener_partidos_playoff()
+    if existentes:
+        return jsonify({ "mensaje": "Bracket ya generado" }), 200
+
+    clasificados = obtener_clasificados()
+    primeros  = clasificados["primeros"]
+    segundos  = clasificados["segundos"]
+    mejores   = clasificados["mejores_terceros"]
+
+    # Los 32 clasificados en orden
+    todos = primeros + segundos + mejores
+
+    # Generar 16 partidos de octavos
+    for i in range(16):
+        equipo_a = todos[i]["id"]     if i < len(todos) else None
+        equipo_b = todos[31-i]["id"]  if (31-i) < len(todos) else None
+        insertar_partido_playoff(
+            id=f"R32_{i+1}",
+            ronda="Octavos de final",
+            equipo_a=equipo_a,
+            equipo_b=equipo_b
+        )
+
+    # Generar partidos vacíos de cuartos, semis y final
+    for i in range(8):
+        insertar_partido_playoff(id=f"R16_{i+1}", ronda="Cuartos de final")
+    for i in range(4):
+        insertar_partido_playoff(id=f"R8_{i+1}", ronda="Semifinales")
+    for i in range(2):
+        insertar_partido_playoff(id=f"R4_{i+1}", ronda="Final")
+
+    return jsonify({ "mensaje": "Bracket generado correctamente" }), 200
+
+
+@app.route("/api/playoffs/<id_partido>/resultado", methods=["POST"])
+def ruta_resultado_playoff(id_partido):
+    """
+    Carga el resultado de un partido de playoff.
+    Espera: goles_a, goles_b, definido_en, ganador (opcional).
+    Actualiza automáticamente el siguiente partido del bracket.
+    """
+    from models import actualizar_partido_playoff, obtener_partidos_playoff
+
+    datos       = request.get_json()
+    goles_a     = datos.get("goles_a")
+    goles_b     = datos.get("goles_b")
+    definido_en = datos.get("definido_en", "regular")
+    ganador     = datos.get("ganador")
+
+    # Determinar ganador automáticamente si no se indicó
+    if ganador is None:
+        partidos = obtener_partidos_playoff()
+        partido  = next((p for p in partidos if p["id"] == id_partido), None)
+        if partido:
+            if goles_a > goles_b:
+                ganador = partido["equipo_a"]
+            elif goles_b > goles_a:
+                ganador = partido["equipo_b"]
+
+    actualizar_partido_playoff(
+        id=id_partido,
+        goles_a=goles_a,
+        goles_b=goles_b,
+        ganador=ganador,
+        definido_en=definido_en
+    )
+
+    return jsonify({ "mensaje": "Resultado de playoff cargado" }), 200
+
 
 # ─────────────────────────────────────────
 # DATOS INICIALES
